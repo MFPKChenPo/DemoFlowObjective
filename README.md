@@ -1,6 +1,8 @@
 # Flow Objective
-## 程式碼
-
+## 程式碼 download
+```
+git clone https://github.com/MFPKChenPo/DemoFlowObjective.git
+```
 ## 流程
 1. 將onos開起來
 ```
@@ -16,7 +18,7 @@ $ onos localhost app activate proxyarp
 ```
 4. 進到flowobjective app資料夾編譯
 ```
-$ cd ~/demo-for-flowob && maven clean install -DskipTests
+$ cd ~DemoFlowObjective/demo-for-flowob && maven clean install -DskipTests
 ```
 5. 將app裝在onos上
 ```
@@ -26,13 +28,21 @@ $ onos-app localhost install! target/demo-for-flowob-1.0-SNAPSHOT.oar
 ```
 網址列輸入: http://localhost:8181/onos/ui/#/flow?devId=of:0000000000000001
 ```
-7. 將app移除
+7. 在mininet中測試連通性 應可通
+```
+mininet> pingall
+```
+8. 將app移除
 ```
 $ onos localhost app deactivate org.flowob.app
 ```
-8. 進onos web gui查看flow是否有被刪掉
+9. 進onos web gui查看flow是否有被刪掉
 ```
 網址列輸入: http://localhost:8181/onos/ui/#/flow?devId=of:0000000000000001
+```
+10. 在mininet中測試連通性 應不通
+```
+mininet> pingall
 ```
 ## install flow function
 ``` java=

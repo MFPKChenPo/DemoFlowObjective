@@ -1,7 +1,7 @@
 # Flow Objective
 ## 程式碼 download
 ```
-git clone https://github.com/MFPKChenPo/DemoFlowObjective.git
+$ git clone https://github.com/MFPKChenPo/DemoFlowObjective.git
 ```
 ## 流程
 1. 將onos開起來

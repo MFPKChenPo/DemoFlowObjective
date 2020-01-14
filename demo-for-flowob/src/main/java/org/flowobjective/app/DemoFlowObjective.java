@@ -86,10 +86,15 @@ import org.onosproject.net.topology.TopologyEvent;
 import org.onosproject.net.topology.TopologyListener;
 import org.onosproject.net.topology.TopologyService;
 import org.onosproject.store.service.StorageService;
+import org.onosproject.core.GroupId;
+import org.onosproject.net.group.*;
+import org.onosproject.net.flow.DefaultFlowRule;
+
 import static org.slf4j.LoggerFactory.getLogger;
 import java.util.*;
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
 import static org.onlab.util.Tools.get;
 
 /**
@@ -111,18 +116,102 @@ public class DemoFlowObjective {
     protected CoreService coreService;
     
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
-	protected ComponentConfigService cfgService;
+    protected ComponentConfigService cfgService;
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    protected GroupService groupService;
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    protected FlowRuleService flowRuleService;
     ApplicationId appId;
 
     @Activate
     protected void activate() {
 
         appId = coreService.getAppId("org.flowob.app");
-        installRule();
+        flowRuleObjectiveDemo();
         log.info("Demo FlowObjective App Started");
     }
+    private void installGroupForSW2(int outPort,String swid, int myGroupId)
+    {
+        TrafficTreatment treatmentBuilder = DefaultTrafficTreatment.builder()
+                .setOutput(PortNumber.portNumber(outPort))
+                .build();
+        GroupBucket bucket = DefaultGroupBucket.createIndirectGroupBucket(treatmentBuilder);
+        GroupBuckets buckets = new GroupBuckets(List.of(bucket));
+        GroupKey key = new DefaultGroupKey(ByteBuffer.allocate(4).putInt(myGroupId).array());
+        GroupDescription groupDesc = new DefaultGroupDescription(DeviceId.deviceId(swid), GroupDescription.Type.INDIRECT, buckets, key, myGroupId, appId);
+        groupService.addGroup(groupDesc);
+    }
+    public void flowRuleObjectiveDemo() {
+        installInterfaceGroup(1, "of:0000000000000002", 1);
+        installInterfaceGroup(2, "of:0000000000000002", 2);
 
-    private void installRule() {
+        installFlowRule(Ethernet.TYPE_ARP, "10.0.0.2", 2, "of:0000000000000001");
+        installFlowRule(Ethernet.TYPE_ARP, "10.0.0.2", 1, "of:0000000000000002");
+        installFlowRule(Ethernet.TYPE_ARP, "10.0.0.1", 2, "of:0000000000000002");
+        installFlowRule(Ethernet.TYPE_ARP, "10.0.0.1", 1, "of:0000000000000001");
+
+        installFlowRule(Ethernet.TYPE_IPV4, "10.0.0.2/32", 2, "of:0000000000000001");
+        installFlowRule(Ethernet.TYPE_IPV4, "10.0.0.2/32", 1, "of:0000000000000002");
+        installFlowRule(Ethernet.TYPE_IPV4, "10.0.0.1/32", 2, "of:0000000000000002");
+        installFlowRule(Ethernet.TYPE_IPV4, "10.0.0.1/32", 1, "of:0000000000000001");
+    }
+
+    private void installInterfaceGroup(int outPort, String did, int gid) {
+        TrafficTreatment tt = DefaultTrafficTreatment.builder()
+                .setOutput(PortNumber.portNumber(outPort))
+                .build();
+        GroupBucket bucket = DefaultGroupBucket.createIndirectGroupBucket(tt);
+        GroupBuckets buckets = new GroupBuckets(List.of(bucket));
+        GroupKey key = new DefaultGroupKey(ByteBuffer.allocate(4).putInt(gid).array());
+        GroupDescription groupDesc = new DefaultGroupDescription(DeviceId.deviceId(did), GroupDescription.Type.INDIRECT, buckets, key, gid, appId);
+        groupService.addGroup(groupDesc);
+    }
+
+    private void removeInterfaceGroups() {
+        DeviceId did = DeviceId.deviceId("of:0000000000000002");
+        GroupKey key = new DefaultGroupKey(ByteBuffer.allocate(4).putInt(1).array());
+        groupService.removeGroup(did, key, appId);
+        key = new DefaultGroupKey(ByteBuffer.allocate(4).putInt(2).array());
+        groupService.removeGroup(did, key, appId);
+    }
+
+    private void installFlowRule(short ethType, String dstIp, int outPort, String did) {
+        TrafficSelector.Builder tsb = DefaultTrafficSelector.builder().matchEthType(ethType);
+        if (ethType == Ethernet.TYPE_ARP) {
+            tsb.matchArpTpa(Ip4Address.valueOf(dstIp));
+        } else {
+            tsb.matchIPDst(IpPrefix.valueOf(dstIp));
+        }
+
+        boolean isOfdpa = did.equals("of:0000000000000002");
+        TrafficTreatment.Builder ttb = DefaultTrafficTreatment.builder();
+        if (isOfdpa) {
+            ttb.group(new GroupId(outPort));
+        } else {
+            ttb.setOutput(PortNumber.portNumber(outPort));
+        }
+        forwardingObjective = DefaultForwardingObjective.builder()
+        .withSelector(tsb.build()).withTreatment(ttb.build())
+        .withFlag(ForwardingObjective.Flag.SPECIFIC).withPriority(40001)
+        .fromApp(appId).makePermanent().add();
+        FlowRule flow = DefaultFlowRule.builder()
+                .forDevice(DeviceId.deviceId(did))
+                .makePermanent()
+                .withPriority(40001)
+                .forTable(isOfdpa ? 60 : 0)
+                .withSelector(forwardingObjective.selector())
+                .withTreatment(forwardingObjective.treatment())
+                .fromApp(appId)
+                .build();
+        flowRuleService.applyFlowRules(flow);
+        // flowObjectiveService.forward(DeviceId.deviceId(did), forwardingObjective);
+    }
+    /*private void installRule() {
+        installGroupForSW2(1, "of:0000000000000002", 1);
+        installGroupForSW2(2, "of:0000000000000002", 2);
+        installFlowForSW1();
+        installFlowForSW1();
+
         TrafficSelector.Builder selectorBuilder = DefaultTrafficSelector.builder();
         TrafficSelector.Builder selectorBuilder2 = DefaultTrafficSelector.builder();
         TrafficTreatment.Builder treatmentBuilder = DefaultTrafficTreatment.builder();
@@ -174,10 +263,12 @@ public class DemoFlowObjective {
         flowObjectiveService.forward(DeviceId.deviceId("of:0000000000000001"), forwardingObjective2);
         flowObjectiveService.forward(DeviceId.deviceId("of:0000000000000002"), forwardingObjective);
         flowObjectiveService.forward(DeviceId.deviceId("of:0000000000000002"), forwardingObjective2);
-    }
+    }*/
     @Deactivate
     protected void deactivate() {
-        removeFlow();
+        // removeFlow();
+        flowRuleService.removeFlowRulesById(appId);
+        removeInterfaceGroups();
         log.info("Demo FlowObjective App Stopped");
     }
 
